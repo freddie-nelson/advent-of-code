@@ -8,6 +8,8 @@
 #include <math.h>
 #include <numeric>
 #include <unordered_map>
+#include <thread>
+#include <future>
 
 std::vector<std::string> split(std::string s, std::string delimiter)
 {
@@ -173,7 +175,7 @@ long long convertValue(Rules rules, long long sourceValue)
     return sourceValue;
 }
 
-long long convert(std::string source, std::string destination, long long sourceValue, const std::unordered_map<std::string, Rules> &maps)
+long long convert(std::string source, std::string destination, long long sourceValue, std::unordered_map<std::string, Rules> maps)
 {
     auto destinations = getAvailableDestinations(source, maps);
     auto it = std::find(destinations.begin(), destinations.end(), destination);
@@ -215,13 +217,42 @@ std::vector<std::pair<long long, long long>> convertSeedsToPart2Format(std::vect
     return pairs;
 }
 
+long long processSeedRange(long long startSeed, long long endSeed, const std::unordered_map<std::string, Rules> &maps)
+{
+    long long minLocation = LONG_LONG_MAX;
+    int counter = 0;
+
+    auto start = time(0);
+    long long increment = (endSeed - startSeed) / 1000;
+
+    for (long long seed = startSeed; seed <= endSeed; seed++)
+    {
+        if (counter >= increment)
+        {
+            auto now = time(0);
+            auto taken = now - start;
+
+            std::cout << "[" << startSeed << "]: " << ((seed - startSeed) / double(endSeed - startSeed)) * 100 << "\% complete" << std::endl;
+            std::cout << "[" << startSeed << "]: TIME_TAKEN: " << taken << "s, ETA: " << (taken / double(seed - startSeed)) * (endSeed - startSeed) << "s" << std::endl;
+            counter = 0;
+        }
+        counter++;
+
+        auto location = convert("seed", "location", seed, maps);
+        if (location < minLocation)
+            minLocation = location;
+    }
+
+    return minLocation;
+}
+
 int main()
 {
     std::string filename = "almanac.txt";
     auto seeds = getSeeds(filename);
     auto seedPairs = convertSeedsToPart2Format(seeds);
 
-    std::cout << "number of seed pairs: " << seeds.size() << std::endl;
+    std::cout << "number of seed pairs: " << seedPairs.size() << std::endl;
 
     // for (auto seed : seeds)
     // {
@@ -255,24 +286,24 @@ int main()
 
     // std::cout << "minLocation: " << minLocation << std::endl;
 
-    long long minLocation = LONG_LONG_MAX;
-    int i = 0;
+    std::vector<std::future<long long>> futures;
 
     for (auto [startSeed, endSeed] : seedPairs)
     {
-        std::cout << "finding location for seed pair: " << i++ << std::endl;
-        std::cout << "seeds to check: " << endSeed - startSeed + 1 << std::endl;
+        std::future<long long> f = std::async(processSeedRange, startSeed, endSeed, maps);
+        futures.push_back(std::move(f));
 
-        for (long long seed = startSeed; seed <= endSeed; seed++)
+        std::cout << "started thread for seed: [" << startSeed << "]" << std::endl;
+    }
+
+    long long minLocation = LONG_LONG_MAX;
+    for (auto &f : futures)
+    {
+        long long location = f.get();
+        std::cout << "thread finished with location: " << location << std::endl;
+        if (location < minLocation)
         {
-            if (seed - startSeed % 1000000 == 0)
-            {
-                std::cout << "seed " << seed - startSeed << " of " << endSeed - startSeed << std::endl;
-            }
-
-            auto location = convert("seed", "location", seed, maps);
-            if (location < minLocation)
-                minLocation = location;
+            minLocation = location;
         }
     }
 
